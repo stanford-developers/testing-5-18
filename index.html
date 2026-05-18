@@ -1,14 +1,861 @@
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-	<title>HELLO WORLD</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SWS Monthly Metrics Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:       #8C1515;
+      --dark-red:  #620000;
+      --light-red: #F4C5C5;
+      --gray:      #4D4F53;
+      --light-bg:  #F5F5F5;
+      --border:    #E2E2E2;
+      --blue:      #006CB8;
+      --green:     #007A4C;
+      --amber:     #E8950A;
+      --white:     #FFFFFF;
+      --text:      #1A1A1A;
+      --muted:     #666;
+      --radius:    10px;
+      --shadow:    0 2px 12px rgba(0,0,0,0.07);
+      --shadow-lg: 0 6px 24px rgba(0,0,0,0.12);
+    }
+
+    body { font-family: Arial, sans-serif; background: #EBEBEB; color: var(--text); }
+
+    /* ── Header ── */
+    .site-header {
+      background: linear-gradient(135deg, var(--dark-red), var(--red));
+      color: white;
+      padding: 24px 40px 18px;
+      position: sticky; top: 0; z-index: 200;
+      box-shadow: 0 4px 20px rgba(140,21,21,.35);
+    }
+    .header-inner { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+    .site-header h1 { font-size:1.5rem; font-weight:700; }
+    .site-header p  { font-size:.82rem; color:var(--light-red); margin-top:3px; }
+    .last-updated   { font-size:.78rem; background:rgba(255,255,255,.15); padding:4px 12px; border-radius:20px; color:rgba(255,255,255,.85); }
+
+    /* ── Month Selector Strip ── */
+    .month-strip {
+      background: white;
+      border-bottom: 2px solid var(--border);
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .month-strip::-webkit-scrollbar { display:none; }
+    .month-strip-label { font-size:.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; padding:14px 0; margin-right:8px; white-space:nowrap; }
+    .month-btn {
+      padding: 8px 20px;
+      border-radius: 20px;
+      border: 2px solid var(--border);
+      background: none;
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .18s;
+      white-space: nowrap;
+      margin: 10px 2px;
+    }
+    .month-btn:hover { border-color: var(--red); color: var(--red); }
+    .month-btn.active { background: var(--red); border-color: var(--red); color: white; }
+    .month-btn.all-btn.active { background: var(--gray); border-color: var(--gray); color: white; }
+
+    /* ── Section Nav ── */
+    .nav-bar {
+      background: white;
+      border-bottom: 2px solid var(--border);
+      padding: 0 40px;
+      display: flex; gap: 4px;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .nav-bar::-webkit-scrollbar { display:none; }
+    .nav-tab {
+      padding:12px 18px; font-size:.86rem; font-weight:600;
+      color:var(--muted); border:none; background:none; cursor:pointer;
+      border-bottom:3px solid transparent; margin-bottom:-2px;
+      white-space:nowrap; transition:color .18s, border-color .18s;
+    }
+    .nav-tab:hover { color:var(--red); }
+    .nav-tab.active { color:var(--red); border-bottom-color:var(--red); }
+
+    /* ── Layout ── */
+    .main { padding:28px 40px 60px; max-width:1400px; margin:0 auto; }
+    .section { display:none; }
+    .section.active { display:block; }
+
+    .section-title {
+      font-size:1rem; font-weight:700; color:var(--gray);
+      margin-bottom:16px; display:flex; align-items:center; gap:8px;
+    }
+    .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+    /* ── Month Banner (shown in single-month mode) ── */
+    .month-banner {
+      display: none;
+      border-radius: var(--radius);
+      padding: 16px 22px;
+      margin-bottom: 22px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: white;
+    }
+    .month-banner.visible { display:flex; }
+    .month-banner h2 { font-size:1.3rem; font-weight:800; }
+    .month-banner p  { font-size:.85rem; opacity:.85; margin-top:2px; }
+    .banner-stats { display:flex; gap:18px; flex-wrap:wrap; }
+    .banner-stat  { text-align:center; }
+    .banner-stat .sv { font-size:1.6rem; font-weight:800; line-height:1; }
+    .banner-stat .sl { font-size:.72rem; opacity:.8; text-transform:uppercase; letter-spacing:.4px; }
+
+    /* ── KPI Cards ── */
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(145px,1fr)); gap:13px; margin-bottom:28px; }
+    .kpi-card { background:white; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; transition:transform .15s, box-shadow .15s; }
+    .kpi-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-lg); }
+    .kpi-card-hdr { padding:8px 14px; font-size:.72rem; font-weight:700; color:white; text-transform:uppercase; letter-spacing:.3px; }
+    .kpi-card-body { padding:13px 14px 10px; }
+    .kpi-value { font-size:2.1rem; font-weight:800; line-height:1; margin-bottom:3px; }
+    .kpi-month-label { font-size:.7rem; color:var(--muted); margin-bottom:9px; }
+    .kpi-badge { display:inline-flex; align-items:center; gap:3px; font-size:.73rem; font-weight:700; padding:3px 9px; border-radius:20px; }
+    .badge-up   { background:#D4EDDA; color:#155724; }
+    .badge-down { background:#F8D7DA; color:#721C24; }
+    .badge-flat { background:#e9ecef; color:#495057; }
+    .kpi-prev   { font-size:.7rem; color:var(--muted); margin-top:5px; }
+
+    /* ── Charts ── */
+    .chart-grid-2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(460px,1fr)); gap:18px; margin-bottom:22px; }
+    .chart-grid-3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr)); gap:18px; margin-bottom:22px; }
+    .chart-card   { background:white; border-radius:var(--radius); box-shadow:var(--shadow); padding:20px 20px 14px; }
+    .chart-card h3 { font-size:.88rem; font-weight:700; color:var(--gray); margin-bottom:14px; }
+
+    /* ── Tables ── */
+    .table-card { background:white; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:22px; }
+    .table-card h3 { padding:14px 20px; font-size:.88rem; font-weight:700; color:white; background:var(--gray); }
+    .table-wrapper { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:.85rem; }
+    th { padding:10px 15px; text-align:left; font-weight:700; font-size:.76rem; text-transform:uppercase; letter-spacing:.4px; color:white; background:var(--gray); white-space:nowrap; }
+    th.num, td.num { text-align:right; }
+    td { padding:9px 15px; border-bottom:1px solid var(--border); }
+    tr:last-child td { border-bottom:none; }
+    tr:nth-child(even) td { background:var(--light-bg); }
+    tr.total-row td { background:var(--red) !important; color:white !important; font-weight:700; }
+    .delta-pos { color:var(--green); font-weight:700; }
+    .delta-neg { color:var(--red);   font-weight:700; }
+    .pct-wrap  { display:flex; align-items:center; gap:7px; }
+    .pct-bg    { flex:1; min-width:80px; height:7px; background:var(--border); border-radius:4px; overflow:hidden; }
+    .pct-fill  { height:100%; border-radius:4px; background:var(--blue); }
+    .pct-lbl   { font-size:.76rem; color:var(--muted); width:38px; text-align:right; }
+
+    /* ── Tag chip grid (single-month) ── */
+    .tag-chip-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:22px; }
+    .tag-chip {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 12px; border-radius:20px; font-size:.82rem; font-weight:600;
+      background:white; box-shadow:var(--shadow); border:1px solid var(--border);
+      color:var(--text);
+    }
+    .tag-chip .tc-count {
+      background:var(--gray); color:white; border-radius:10px;
+      padding:2px 7px; font-size:.72rem; font-weight:700;
+    }
+    .tag-chip.top1 { border-color:var(--red);  }
+    .tag-chip.top2 { border-color:var(--blue); }
+    .tag-chip.top3 { border-color:var(--green);}
+
+    /* ── Notes ── */
+    .notes-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(290px,1fr)); gap:18px; margin-bottom:22px; }
+    .note-card  { background:white; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .note-hdr   { padding:12px 18px; font-size:.9rem; font-weight:700; color:white; }
+    .note-body  { padding:15px 18px; font-size:.87rem; line-height:1.65; }
+    .chips      { display:flex; flex-wrap:wrap; gap:5px; margin-top:12px; }
+    .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; font-size:.74rem; font-weight:600; background:var(--light-bg); border:1px solid var(--border); color:var(--gray); }
+    .chip .cc { background:var(--gray); color:white; border-radius:10px; padding:1px 5px; font-size:.68rem; }
+
+    /* ── Highlight badge (single month detail) ── */
+    .highlight-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:12px; margin-bottom:22px; }
+    .highlight-card { background:white; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; border-left:4px solid var(--gray); }
+    .highlight-card.hl-blue  { border-left-color:var(--blue);  }
+    .highlight-card.hl-green { border-left-color:var(--green); }
+    .highlight-card.hl-red   { border-left-color:var(--red);   }
+    .highlight-card.hl-amber { border-left-color:var(--amber); }
+    .hl-label { font-size:.74rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-bottom:4px; }
+    .hl-value { font-size:1.7rem; font-weight:800; line-height:1; }
+    .hl-sub   { font-size:.78rem; color:var(--muted); margin-top:4px; }
+
+    @media(max-width:768px){
+      .site-header, .month-strip, .nav-bar, .main { padding-left:14px; padding-right:14px; }
+      .chart-grid-2, .chart-grid-3 { grid-template-columns:1fr; }
+      .kpi-grid { grid-template-columns:repeat(3,1fr); }
+    }
+  </style>
 </head>
 <body>
 
-	HELLO WORLD
-	
+<!-- ── Header ── -->
+<header class="site-header">
+  <div class="header-inner">
+    <div>
+      <h1>Stanford Web Services — Monthly Metrics Dashboard</h1>
+      <p>CES Reporting &nbsp;·&nbsp; Feb – Apr 2026 &nbsp;·&nbsp; Source: CES Monthly Metrics Tracking</p>
+    </div>
+    <span class="last-updated" id="active-month-label">All Months</span>
+  </div>
+</header>
+
+<!-- ── Month Selector ── -->
+<div class="month-strip">
+  <span class="month-strip-label">View:</span>
+  <button class="month-btn all-btn active" onclick="selectMonth('all', this)">All Months</button>
+  <button class="month-btn" onclick="selectMonth(0, this)">February 2026</button>
+  <button class="month-btn" onclick="selectMonth(1, this)">March 2026</button>
+  <button class="month-btn" onclick="selectMonth(2, this)">April 2026</button>
+</div>
+
+<!-- ── Section Nav ── -->
+<nav class="nav-bar">
+  <button class="nav-tab active" onclick="showTab('dashboard', this)">📊 Overview</button>
+  <button class="nav-tab" onclick="showTab('snow',      this)">🎫 SNOW Tickets</button>
+  <button class="nav-tab" onclick="showTab('hubspot',   this)">📈 HubSpot & Outreach</button>
+  <button class="nav-tab" onclick="showTab('tags',      this)">🏷️ Ticket Tags</button>
+  <button class="nav-tab" onclick="showTab('notes',     this)">📝 Monthly Notes</button>
+</nav>
+
+<!-- ── Main ── -->
+<main class="main">
+
+  <!-- ════ OVERVIEW ════ -->
+  <section id="tab-dashboard" class="section active">
+    <div class="month-banner" id="banner-dashboard"></div>
+    <p class="section-title" id="kpi-title">Key Performance Indicators — All Months</p>
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <div id="all-charts-dashboard">
+      <p class="section-title">SNOW Ticket Trends</p>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>Tickets Assigned, Closed &amp; Re-routed</h3><div><canvas id="snowLineChart"></canvas></div></div>
+        <div class="chart-card"><h3>Sites Provisioned &amp; Tickets Closed</h3><div><canvas id="provisionChart"></canvas></div></div>
+      </div>
+      <p class="section-title">HubSpot &amp; Outreach</p>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>Deals Created, Won &amp; Contacts Added</h3><div><canvas id="hubspotBarChart"></canvas></div></div>
+        <div class="chart-card"><h3>Session Attendees &amp; Monthly Launches</h3><div><canvas id="miscChart"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- Single-month detail panel -->
+    <div id="month-detail-dashboard" style="display:none">
+      <p class="section-title" id="detail-title-dash">Monthly Highlights</p>
+      <div class="highlight-grid" id="highlight-grid"></div>
+      <p class="section-title">SNOW Breakdown</p>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>SNOW Tickets</h3><div><canvas id="snowMonthBar"></canvas></div></div>
+        <div class="chart-card"><h3>Top Ticket Tags This Month</h3><div><canvas id="tagsMonthBar"></canvas></div></div>
+      </div>
+      <p class="section-title">HubSpot &amp; Outreach This Month</p>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>HubSpot Metrics</h3><div><canvas id="hsMonthBar"></canvas></div></div>
+        <div class="chart-card"><h3>Launches &amp; Attendance</h3><div><canvas id="launchMonthBar"></canvas></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ SNOW TICKETS ════ -->
+  <section id="tab-snow" class="section">
+    <div class="month-banner" id="banner-snow"></div>
+    <div id="snow-all">
+      <p class="section-title">SNOW Ticket Volume by Month</p>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>Assigned vs. Closed</h3><div><canvas id="snowBar2"></canvas></div></div>
+        <div class="chart-card"><h3>Closure Rate (Closed ÷ Assigned)</h3><div><canvas id="closureRateChart"></canvas></div></div>
+      </div>
+    </div>
+    <div class="table-card">
+      <h3 id="snow-table-title">📋 SNOW Monthly Breakdown</h3>
+      <div class="table-wrapper"><table id="snowTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ════ HUBSPOT & OUTREACH ════ -->
+  <section id="tab-hubspot" class="section">
+    <div class="month-banner" id="banner-hubspot"></div>
+    <div id="hs-all">
+      <p class="section-title">Pipeline &amp; Outreach Trends</p>
+      <div class="chart-grid-3">
+        <div class="chart-card"><h3>New Deals Created</h3><div><canvas id="dealsChart"></canvas></div></div>
+        <div class="chart-card"><h3>Deals Closed Won</h3><div><canvas id="wonChart"></canvas></div></div>
+        <div class="chart-card"><h3>Contacts Created</h3><div><canvas id="contactsChart"></canvas></div></div>
+      </div>
+      <div class="chart-grid-2">
+        <div class="chart-card"><h3>Session Attendees</h3><div><canvas id="attendanceChart"></canvas></div></div>
+        <div class="chart-card"><h3>Monthly Launches</h3><div><canvas id="launchesChart"></canvas></div></div>
+      </div>
+    </div>
+    <div class="table-card">
+      <h3 id="hs-table-title">📋 Outreach &amp; Pipeline Summary</h3>
+      <div class="table-wrapper"><table id="outreachTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ════ TICKET TAGS ════ -->
+  <section id="tab-tags" class="section">
+    <div class="month-banner" id="banner-tags"></div>
+    <p class="section-title" id="tags-section-title">Tag Distribution — All Months</p>
+    <div id="tag-chips-row" class="tag-chip-grid"></div>
+    <div class="chart-grid-2">
+      <div class="chart-card"><h3 id="tags-bar-title">Top Tags — 3-Month Total</h3><div><canvas id="tagsBarChart" style="max-height:420px"></canvas></div></div>
+      <div class="chart-card"><h3>Top 8 Tags — Share of Tickets</h3><div><canvas id="tagsPieChart" style="max-height:360px"></canvas></div></div>
+    </div>
+    <div class="table-card">
+      <h3 id="tags-table-title">🏷️ Full Tag Breakdown</h3>
+      <div class="table-wrapper"><table id="tagsTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ════ MONTHLY NOTES ════ -->
+  <section id="tab-notes" class="section">
+    <div class="month-banner" id="banner-notes"></div>
+    <p class="section-title">Monthly Narrative Summaries</p>
+    <div class="notes-grid" id="notes-grid"></div>
+  </section>
+
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════════════════════════
+const MONTHS = ["Feb 2026", "Mar 2026", "Apr 2026"];
+const MONTH_COLORS = ["#006CB8", "#007A4C", "#8C1515"];
+const C = { red:"#8C1515", darkRed:"#620000", gray:"#4D4F53", blue:"#006CB8", green:"#007A4C", amber:"#E8950A" };
+
+const METRICS = {
+  "SNOW Re-routed":      [17,  8, 13],
+  "SNOW Assigned":       [65, 84, 79],
+  "SNOW Closed":         [61, 65, 58],
+  "Sites Provisioned":   [26, 31, 25],
+  "HubSpot New Deals":   [15, 40, 17],
+  "HubSpot Deals Won":   [15, 16, 14],
+  "HubSpot Contacts":    [48, 16, 36],
+  "Session Attendees":   [ 1,  4,  6],
+  "Monthly Launches":    [12, 21, 15],
+};
+
+const TAGS = {
+  "Access/Permissions":   [2, 2, 5],  "AFS Websites":        [1, 0, 2],
+  "Accessibility":        [0, 0, 2],  "Analytics":           [1, 3, 0],
+  "Basic Editing":        [15,11,11], "Bug":                 [1, 0, 1],
+  "Embed":                [6, 5, 2],  "External Relations":  [3, 1, 1],
+  "Feature Request":      [1, 2, 2],  "Hosting":             [0, 2, 4],
+  "Intranet":             [2, 0, 2],  "Launch":              [0, 2, 4],
+  "New Service/New Site": [0, 1, 0],  "Office Hours":        [1, 4, 0],
+  "Other":                [3, 6, 4],  "Re-route/Transfer":   [17,8,13],
+  "Release":              [1, 0, 0],  "Search":              [0, 2, 1],
+  "Site Deletion":        [0, 0, 1],  "Ticket - Complicated":[4, 9, 8],
+  "Ticket - Simple":      [4, 4, 3],  "WAF":                 [1, 3, 0],
+  "WordPress":            [2, 1, 1],
+};
+
+const NOTES = [
+  { month:"February 2026", color:C.blue,
+    summary:"High re-route/transfer volume (17) driven by site provisioning tickets. Basic Editing was the top closed tag (15). Equal split of Complicated vs. Simple tickets (4 each). Low session attendance (1 attendee). Strong contacts created (48). HubSpot new deals and wins both at 15.",
+    topTags:[["Re-route/Transfer",17],["Basic Editing",15],["Embed",6],["External Relations",3],["Other",3]] },
+  { month:"March 2026", color:C.green,
+    summary:"Highest SNOW assignment month (84 tickets). Strong provisioning (31 sites). Basic Editing remained top tag (11). Big jump in HubSpot new deals (40 — highest of the quarter). Session attendance grew to 4. Launches peaked at 21 — most active month for site go-lives.",
+    topTags:[["Basic Editing",11],["Ticket - Complicated",9],["Re-route/Transfer",8],["Other",6],["Embed",5]] },
+  { month:"April 2026", color:C.red,
+    summary:"Re-route/Transfer reclaimed top tag (13). SNOW assignments slightly down (79). Closed tickets dipped (58). Site provisioning eased to 25. HubSpot new deals dropped sharply from March high (17). Session attendance continued to grow (6 — highest month). Launches settled at 15.",
+    topTags:[["Re-route/Transfer",13],["Basic Editing",11],["Ticket - Complicated",8],["Access/Permissions",5],["Other",4]] },
+];
+
+// ══════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════
+let activeMonth = 'all';  // 'all' | 0 | 1 | 2
+const chartInstances = {};
+
+// ══════════════════════════════════════════════════════════════════════════
+// CHART HELPERS
+// ══════════════════════════════════════════════════════════════════════════
+function baseOpts() {
+  return {
+    responsive: true,
+    plugins: { legend: { labels: { font: { family:'Arial', size:11 }, padding:14 } } },
+    scales: {
+      x: { grid:{display:false}, ticks:{font:{family:'Arial'}} },
+      y: { grid:{color:'#F0F0F0'}, ticks:{font:{family:'Arial'}} }
+    }
+  };
+}
+function mkBar(label, data, color) {
+  return { label, data, backgroundColor:color+'CC', borderColor:color, borderWidth:2, borderRadius:5, borderSkipped:false };
+}
+function mkLine(label, data, color) {
+  return { label, data, borderColor:color, backgroundColor:color+'18', borderWidth:2.5, pointRadius:5, pointBackgroundColor:color, fill:true, tension:.3 };
+}
+function makeChart(id, type, data, options) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); }
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  chartInstances[id] = new Chart(ctx, { type, data, options });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MONTH SELECTOR
+// ══════════════════════════════════════════════════════════════════════════
+function selectMonth(m, btn) {
+  activeMonth = m;
+  document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const label = m === 'all' ? 'All Months' : MONTHS[m];
+  document.getElementById('active-month-label').textContent = label;
+  renderAll();
+}
+
+function showTab(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MONTH BANNER
+// ══════════════════════════════════════════════════════════════════════════
+function renderBanner(id, mi) {
+  const el = document.getElementById(id);
+  if (mi === 'all') { el.classList.remove('visible'); return; }
+  const color = MONTH_COLORS[mi];
+  const prev  = mi > 0 ? mi - 1 : null;
+  const assigned = METRICS["SNOW Assigned"][mi];
+  const closed   = METRICS["SNOW Closed"][mi];
+  const rate     = ((closed/assigned)*100).toFixed(1);
+  const deals    = METRICS["HubSpot New Deals"][mi];
+  const launches = METRICS["Monthly Launches"][mi];
+  el.style.background = `linear-gradient(135deg, ${color}EE, ${color})`;
+  el.innerHTML = `
+    <div>
+      <h2>${MONTHS[mi]}</h2>
+      <p>${prev !== null ? `vs. ${MONTHS[prev]}` : 'First month on record'}</p>
+    </div>
+    <div class="banner-stats">
+      <div class="banner-stat"><div class="sv">${assigned}</div><div class="sl">Assigned</div></div>
+      <div class="banner-stat"><div class="sv">${closed}</div><div class="sl">Closed</div></div>
+      <div class="banner-stat"><div class="sv">${rate}%</div><div class="sl">Closure Rate</div></div>
+      <div class="banner-stat"><div class="sv">${deals}</div><div class="sl">New Deals</div></div>
+      <div class="banner-stat"><div class="sv">${launches}</div><div class="sl">Launches</div></div>
+    </div>`;
+  el.classList.add('visible');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// KPI CARDS
+// ══════════════════════════════════════════════════════════════════════════
+const KPI_CONFIG = [
+  { key:"SNOW Assigned",     color:C.blue,  icon:"🎫" },
+  { key:"SNOW Closed",       color:C.green, icon:"✅" },
+  { key:"SNOW Re-routed",    color:C.gray,  icon:"↩️" },
+  { key:"Sites Provisioned", color:C.red,   icon:"🌐" },
+  { key:"HubSpot New Deals", color:C.blue,  icon:"💼" },
+  { key:"HubSpot Deals Won", color:C.green, icon:"🏆" },
+  { key:"HubSpot Contacts",  color:C.amber, icon:"👥" },
+  { key:"Session Attendees", color:C.gray,  icon:"📚" },
+  { key:"Monthly Launches",  color:C.red,   icon:"🚀" },
+];
+
+function renderKPIs(mi) {
+  const grid = document.getElementById('kpi-grid');
+  const title = document.getElementById('kpi-title');
+  grid.innerHTML = '';
+
+  if (mi === 'all') {
+    title.textContent = 'Key Performance Indicators — All Months';
+    KPI_CONFIG.forEach(({ key, color, icon }) => {
+      const vals = METRICS[key];
+      const latest = vals[vals.length - 1];
+      const d = latest - vals[vals.length - 2];
+      const p = vals[vals.length - 2] ? ((d / vals[vals.length - 2]) * 100).toFixed(0) : 0;
+      const sign = d > 0 ? '+' : '';
+      const arrow = d > 0 ? '▲' : d < 0 ? '▼' : '–';
+      const cls = d > 0 ? 'badge-up' : d < 0 ? 'badge-down' : 'badge-flat';
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+      card.innerHTML = `
+        <div class="kpi-card-hdr" style="background:${color}">${icon} ${key}</div>
+        <div class="kpi-card-body">
+          <div class="kpi-value" style="color:${color}">${latest}</div>
+          <div class="kpi-month-label">Apr 2026</div>
+          <span class="kpi-badge ${cls}">${arrow} ${sign}${d} (${sign}${p}%)</span>
+          <div class="kpi-prev">vs. ${vals[vals.length-2]} in Mar</div>
+        </div>`;
+      grid.appendChild(card);
+    });
+  } else {
+    title.textContent = `Key Performance Indicators — ${MONTHS[mi]}`;
+    const prev = mi > 0 ? mi - 1 : null;
+    KPI_CONFIG.forEach(({ key, color, icon }) => {
+      const val = METRICS[key][mi];
+      let badge = '';
+      if (prev !== null) {
+        const pv = METRICS[key][prev];
+        const d  = val - pv;
+        const p  = pv ? ((d / pv) * 100).toFixed(0) : 0;
+        const sign = d > 0 ? '+' : '';
+        const arrow = d > 0 ? '▲' : d < 0 ? '▼' : '–';
+        const cls = d > 0 ? 'badge-up' : d < 0 ? 'badge-down' : 'badge-flat';
+        badge = `<span class="kpi-badge ${cls}">${arrow} ${sign}${d} (${sign}${p}%)</span>
+                 <div class="kpi-prev">vs. ${pv} in ${MONTHS[prev]}</div>`;
+      } else {
+        badge = `<span class="kpi-badge badge-flat">First month</span>`;
+      }
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+      card.innerHTML = `
+        <div class="kpi-card-hdr" style="background:${color}">${icon} ${key}</div>
+        <div class="kpi-card-body">
+          <div class="kpi-value" style="color:${color}">${val}</div>
+          <div class="kpi-month-label">${MONTHS[mi]}</div>
+          ${badge}
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// OVERVIEW CHARTS
+// ══════════════════════════════════════════════════════════════════════════
+function renderOverviewCharts(mi) {
+  const allDiv    = document.getElementById('all-charts-dashboard');
+  const detailDiv = document.getElementById('month-detail-dashboard');
+
+  if (mi === 'all') {
+    allDiv.style.display    = '';
+    detailDiv.style.display = 'none';
+    makeChart('snowLineChart', 'line', {
+      labels: MONTHS,
+      datasets: [
+        mkLine("Assigned",  METRICS["SNOW Assigned"],  C.blue),
+        mkLine("Closed",    METRICS["SNOW Closed"],    C.green),
+        mkLine("Re-routed", METRICS["SNOW Re-routed"], C.red),
+      ]
+    }, baseOpts());
+    makeChart('provisionChart', 'bar', {
+      labels: MONTHS,
+      datasets: [
+        mkBar("Sites Provisioned", METRICS["Sites Provisioned"], C.gray),
+        mkBar("SNOW Closed",       METRICS["SNOW Closed"],       C.blue),
+      ]
+    }, baseOpts());
+    makeChart('hubspotBarChart', 'bar', {
+      labels: MONTHS,
+      datasets: [
+        mkBar("New Deals", METRICS["HubSpot New Deals"], C.blue),
+        mkBar("Deals Won", METRICS["HubSpot Deals Won"], C.green),
+        mkBar("Contacts",  METRICS["HubSpot Contacts"],  C.amber),
+      ]
+    }, baseOpts());
+    makeChart('miscChart', 'bar', {
+      labels: MONTHS,
+      datasets: [
+        mkBar("Session Attendees", METRICS["Session Attendees"], C.amber),
+        mkBar("Monthly Launches",  METRICS["Monthly Launches"],  C.red),
+      ]
+    }, baseOpts());
+  } else {
+    allDiv.style.display    = 'none';
+    detailDiv.style.display = '';
+    document.getElementById('detail-title-dash').textContent = `${MONTHS[mi]} — At a Glance`;
+
+    // Highlight cards
+    const hgrid = document.getElementById('highlight-grid');
+    const highlights = [
+      { label:"Closure Rate",   value:((METRICS["SNOW Closed"][mi]/METRICS["SNOW Assigned"][mi])*100).toFixed(1)+'%', sub:`${METRICS["SNOW Closed"][mi]} closed of ${METRICS["SNOW Assigned"][mi]} assigned`, cls:'hl-green' },
+      { label:"New Deals",      value:METRICS["HubSpot New Deals"][mi], sub:`vs. ${mi>0?METRICS["HubSpot New Deals"][mi-1]:'—'} prev month`, cls:'hl-blue' },
+      { label:"Sites Launched", value:METRICS["Monthly Launches"][mi],  sub:`Sites provisioned: ${METRICS["Sites Provisioned"][mi]}`, cls:'hl-red' },
+      { label:"Contacts Added", value:METRICS["HubSpot Contacts"][mi],  sub:`Session attendees: ${METRICS["Session Attendees"][mi]}`, cls:'hl-amber' },
+    ];
+    hgrid.innerHTML = highlights.map(h => `
+      <div class="highlight-card ${h.cls}">
+        <div class="hl-label">${h.label}</div>
+        <div class="hl-value">${h.value}</div>
+        <div class="hl-sub">${h.sub}</div>
+      </div>`).join('');
+
+    // SNOW bar for this month
+    const snowKeys = ["SNOW Assigned","SNOW Closed","SNOW Re-routed","Sites Provisioned"];
+    const noScaleOpts = { ...baseOpts(), plugins: { legend:{display:false} } };
+    makeChart('snowMonthBar', 'bar', {
+      labels: snowKeys,
+      datasets: [{ label:MONTHS[mi], data:snowKeys.map(k=>METRICS[k][mi]),
+        backgroundColor:[C.blue+'CC',C.green+'CC',C.gray+'CC',C.red+'CC'],
+        borderColor:[C.blue,C.green,C.gray,C.red],
+        borderWidth:2, borderRadius:5, borderSkipped:false }]
+    }, noScaleOpts);
+
+    // Top tags for this month
+    const monthTags = Object.entries(TAGS)
+      .map(([t,v]) => [t, v[mi]])
+      .filter(([,v]) => v > 0)
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 10);
+    makeChart('tagsMonthBar', 'bar', {
+      labels: monthTags.map(x=>x[0]),
+      datasets: [{ label:'Tickets', data:monthTags.map(x=>x[1]),
+        backgroundColor: MONTH_COLORS[mi]+'CC', borderColor:MONTH_COLORS[mi],
+        borderWidth:2, borderRadius:5, borderSkipped:false }]
+    }, { indexAxis:'y', responsive:true,
+         plugins:{legend:{display:false}},
+         scales:{ x:{grid:{color:'#F0F0F0'},ticks:{font:{family:'Arial'}}},
+                  y:{grid:{display:false},ticks:{font:{family:'Arial',size:11}}} } });
+
+    // HubSpot bar
+    const hsKeys = ["HubSpot New Deals","HubSpot Deals Won","HubSpot Contacts"];
+    makeChart('hsMonthBar', 'bar', {
+      labels: hsKeys,
+      datasets: [{ label:MONTHS[mi], data:hsKeys.map(k=>METRICS[k][mi]),
+        backgroundColor:[C.blue+'CC',C.green+'CC',C.amber+'CC'],
+        borderColor:[C.blue,C.green,C.amber],
+        borderWidth:2, borderRadius:5, borderSkipped:false }]
+    }, noScaleOpts);
+
+    // Launch + attendance bar
+    const laKeys = ["Session Attendees","Monthly Launches","Sites Provisioned"];
+    makeChart('launchMonthBar', 'bar', {
+      labels: laKeys,
+      datasets: [{ label:MONTHS[mi], data:laKeys.map(k=>METRICS[k][mi]),
+        backgroundColor:[C.amber+'CC',C.red+'CC',C.gray+'CC'],
+        borderColor:[C.amber,C.red,C.gray],
+        borderWidth:2, borderRadius:5, borderSkipped:false }]
+    }, noScaleOpts);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SNOW TAB
+// ══════════════════════════════════════════════════════════════════════════
+function renderSnow(mi) {
+  const allDiv = document.getElementById('snow-all');
+  allDiv.style.display = mi === 'all' ? '' : 'none';
+
+  if (mi === 'all') {
+    document.getElementById('snow-table-title').textContent = '📋 SNOW Monthly Breakdown';
+    makeChart('snowBar2', 'bar', {
+      labels: MONTHS,
+      datasets: [
+        mkBar("Assigned",  METRICS["SNOW Assigned"],  C.blue),
+        mkBar("Closed",    METRICS["SNOW Closed"],    C.green),
+        mkBar("Re-routed", METRICS["SNOW Re-routed"], C.gray),
+      ]
+    }, baseOpts());
+    const rates = METRICS["SNOW Assigned"].map((v,i) => +((METRICS["SNOW Closed"][i]/v)*100).toFixed(1));
+    makeChart('closureRateChart', 'line', {
+      labels: MONTHS,
+      datasets: [mkLine("Closure Rate (%)", rates, C.green)]
+    }, { ...baseOpts(), scales:{
+      x:{grid:{display:false},ticks:{font:{family:'Arial'}}},
+      y:{min:0,max:100,grid:{color:'#F0F0F0'},ticks:{font:{family:'Arial'},callback:v=>v+'%'}}
+    }});
+  } else {
+    document.getElementById('snow-table-title').textContent = `📋 SNOW Breakdown — ${MONTHS[mi]}`;
+  }
+
+  // Table
+  let html = `<thead><tr>`;
+  if (mi === 'all') {
+    html += `<th>Metric</th>${MONTHS.map(m=>`<th class="num">${m}</th>`).join('')}<th class="num">Total</th><th class="num">Mar vs Feb</th><th class="num">Apr vs Mar</th></tr></thead><tbody>`;
+    [["SNOW Assigned to SWS","SNOW Assigned"],["SNOW Tickets Closed","SNOW Closed"],["SNOW Re-routed","SNOW Re-routed"],["Sites Provisioned","Sites Provisioned"]].forEach(([lbl,key]) => {
+      const v = METRICS[key];
+      const d1=v[1]-v[0], d2=v[2]-v[1];
+      const fmt=d=>`<span class="${d>0?'delta-pos':d<0?'delta-neg':''}">${d>0?'+':''}${d}</span>`;
+      html += `<tr><td><strong>${lbl}</strong></td>${v.map(x=>`<td class="num">${x}</td>`).join('')}<td class="num">${v[0]+v[1]+v[2]}</td><td class="num">${fmt(d1)}</td><td class="num">${fmt(d2)}</td></tr>`;
+    });
+    const cr = METRICS["SNOW Assigned"].map((v,i)=>((METRICS["SNOW Closed"][i]/v)*100).toFixed(1)+'%');
+    html += `<tr class="total-row"><td>Closure Rate</td>${cr.map(r=>`<td class="num">${r}</td>`).join('')}<td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>`;
+  } else {
+    html += `<th>Metric</th><th class="num">${MONTHS[mi]}</th>${mi>0?`<th class="num">${MONTHS[mi-1]}</th><th class="num">Change</th>`:''}</tr></thead><tbody>`;
+    [["SNOW Assigned to SWS","SNOW Assigned"],["SNOW Tickets Closed","SNOW Closed"],["SNOW Re-routed","SNOW Re-routed"],["Sites Provisioned","Sites Provisioned"]].forEach(([lbl,key]) => {
+      const v = METRICS[key][mi];
+      const pv = mi>0 ? METRICS[key][mi-1] : null;
+      const d  = pv !== null ? v - pv : null;
+      const fmt = d===null?'':`<td class="num"><span class="${d>0?'delta-pos':d<0?'delta-neg':''}">${d>0?'+':''}${d}</span></td>`;
+      html += `<tr><td><strong>${lbl}</strong></td><td class="num">${v}</td>${pv!==null?`<td class="num">${pv}</td>`:''}${fmt}</tr>`;
+    });
+    const rate = ((METRICS["SNOW Closed"][mi]/METRICS["SNOW Assigned"][mi])*100).toFixed(1)+'%';
+    const prevRate = mi>0 ? ((METRICS["SNOW Closed"][mi-1]/METRICS["SNOW Assigned"][mi-1])*100).toFixed(1)+'%' : null;
+    html += `<tr class="total-row"><td>Closure Rate</td><td class="num">${rate}</td>${prevRate?`<td class="num">${prevRate}</td><td class="num">—</td>`:''}</tr>`;
+  }
+  html += '</tbody>';
+  document.getElementById('snowTable').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// HUBSPOT TAB
+// ══════════════════════════════════════════════════════════════════════════
+function renderHubspot(mi) {
+  const allDiv = document.getElementById('hs-all');
+  allDiv.style.display = mi === 'all' ? '' : 'none';
+
+  if (mi === 'all') {
+    document.getElementById('hs-table-title').textContent = '📋 Outreach & Pipeline Summary';
+    [['dealsChart',"HubSpot New Deals",C.blue],['wonChart',"HubSpot Deals Won",C.green],
+     ['contactsChart',"HubSpot Contacts",C.amber],['attendanceChart',"Session Attendees",C.amber],
+     ['launchesChart',"Monthly Launches",C.red]].forEach(([id,key,color]) => {
+      makeChart(id,'bar',{labels:MONTHS,datasets:[mkBar(key,METRICS[key],color)]},
+        {...baseOpts(),plugins:{legend:{display:false}}});
+    });
+  } else {
+    document.getElementById('hs-table-title').textContent = `📋 Outreach & Pipeline — ${MONTHS[mi]}`;
+  }
+
+  const outKeys = ["HubSpot New Deals","HubSpot Deals Won","HubSpot Contacts","Session Attendees","Monthly Launches","Sites Provisioned"];
+  let html = '<thead><tr>';
+  if (mi === 'all') {
+    html += `<th>Metric</th>${MONTHS.map(m=>`<th class="num">${m}</th>`).join('')}<th class="num">Total</th><th class="num">Avg</th><th>Best Month</th></tr></thead><tbody>`;
+    outKeys.forEach(key => {
+      const v = METRICS[key];
+      const tot = v[0]+v[1]+v[2];
+      const best = v.indexOf(Math.max(...v));
+      html += `<tr><td><strong>${key}</strong></td>${v.map(x=>`<td class="num">${x}</td>`).join('')}<td class="num">${tot}</td><td class="num">${(tot/3).toFixed(1)}</td><td>${MONTHS[best]}</td></tr>`;
+    });
+  } else {
+    html += `<th>Metric</th><th class="num">${MONTHS[mi]}</th>${mi>0?`<th class="num">${MONTHS[mi-1]}</th><th class="num">Change</th>`:''}</tr></thead><tbody>`;
+    outKeys.forEach(key => {
+      const v = METRICS[key][mi];
+      const pv = mi>0 ? METRICS[key][mi-1] : null;
+      const d  = pv !== null ? v - pv : null;
+      const fmt = d===null?'':`<td class="num"><span class="${d>0?'delta-pos':d<0?'delta-neg':''}">${d>0?'+':''}${d}</span></td>`;
+      html += `<tr><td><strong>${key}</strong></td><td class="num">${v}</td>${pv!==null?`<td class="num">${pv}</td>`:''}${fmt}</tr>`;
+    });
+  }
+  html += '</tbody>';
+  document.getElementById('outreachTable').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// TAGS TAB
+// ══════════════════════════════════════════════════════════════════════════
+function renderTags(mi) {
+  // Compute data
+  const tagData = Object.entries(TAGS).map(([tag, vals]) => {
+    const count = mi === 'all' ? vals.reduce((a,b)=>a+b,0) : vals[mi];
+    return [tag, count, vals];
+  }).filter(([,c]) => c > 0).sort((a,b) => b[1]-a[1]);
+
+  const grandTotal = tagData.reduce((a,[,c])=>a+c, 0);
+
+  // Section labels
+  document.getElementById('tags-section-title').textContent = mi === 'all'
+    ? 'Tag Distribution — All Months' : `Tag Distribution — ${MONTHS[mi]}`;
+  document.getElementById('tags-bar-title').textContent = mi === 'all'
+    ? 'Top Tags — 3-Month Total' : `Top Tags — ${MONTHS[mi]}`;
+  document.getElementById('tags-table-title').textContent = mi === 'all'
+    ? '🏷️ Full Tag Breakdown — All Months' : `🏷️ Tag Breakdown — ${MONTHS[mi]}`;
+
+  // Chip row
+  const chipRow = document.getElementById('tag-chips-row');
+  chipRow.innerHTML = tagData.slice(0,10).map(([tag,count], i) => {
+    const cls = i===0?'top1':i===1?'top2':i===2?'top3':'';
+    return `<span class="tag-chip ${cls}">${tag}<span class="tc-count">${count}</span></span>`;
+  }).join('');
+
+  // Bar chart
+  const color = mi === 'all' ? C.blue : MONTH_COLORS[mi];
+  makeChart('tagsBarChart', 'bar', {
+    labels: tagData.map(x=>x[0]),
+    datasets: [{ label:'Tickets', data:tagData.map(x=>x[1]),
+      backgroundColor:color+'CC', borderColor:color, borderWidth:2, borderRadius:4, borderSkipped:false }]
+  }, { indexAxis:'y', responsive:true,
+       plugins:{legend:{display:false}},
+       scales:{ x:{grid:{color:'#F0F0F0'},ticks:{font:{family:'Arial'}}},
+                y:{grid:{display:false},ticks:{font:{family:'Arial',size:11}}} } });
+
+  // Pie chart (top 8)
+  const top8 = tagData.slice(0,8);
+  const pieColors = [C.blue,C.red,C.green,C.amber,C.gray,"#9B59B6","#E74C3C","#1ABC9C"];
+  makeChart('tagsPieChart', 'doughnut', {
+    labels: top8.map(x=>x[0]),
+    datasets: [{ data:top8.map(x=>x[1]),
+      backgroundColor:pieColors.map(c=>c+'CC'), borderColor:pieColors, borderWidth:2 }]
+  }, { responsive:true, plugins:{
+    legend:{position:'right',labels:{font:{family:'Arial',size:11},padding:12}},
+    tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} (${((ctx.raw/grandTotal)*100).toFixed(1)}%)`}}
+  }});
+
+  // Table
+  let html = '<thead><tr>';
+  if (mi === 'all') {
+    html += `<th>Tag</th>${MONTHS.map(m=>`<th class="num">${m}</th>`).join('')}<th class="num">Total</th><th>Share</th></tr></thead><tbody>`;
+    let totals = [0,0,0];
+    tagData.forEach(([tag,,vals]) => {
+      const tot = vals.reduce((a,b)=>a+b,0);
+      const pct = ((tot/grandTotal)*100).toFixed(1);
+      vals.forEach((v,i)=>totals[i]+=v);
+      html += `<tr><td><strong>${tag}</strong></td>${vals.map(v=>`<td class="num">${v||'—'}</td>`).join('')}<td class="num">${tot}</td>
+        <td><div class="pct-wrap"><div class="pct-bg"><div class="pct-fill" style="width:${Math.round(tot/grandTotal*100)}%"></div></div><span class="pct-lbl">${pct}%</span></div></td></tr>`;
+    });
+    html += `<tr class="total-row"><td>TOTAL</td>${totals.map(t=>`<td class="num">${t}</td>`).join('')}<td class="num">${grandTotal}</td><td>100%</td></tr>`;
+  } else {
+    const prev = mi > 0 ? mi - 1 : null;
+    html += `<th>Tag</th><th class="num">${MONTHS[mi]}</th>${prev!==null?`<th class="num">${MONTHS[prev]}</th><th class="num">Change</th>`:''}<th>Share</th></tr></thead><tbody>`;
+    tagData.forEach(([tag,count,vals]) => {
+      const pv   = prev !== null ? vals[prev] : null;
+      const d    = pv !== null ? count - pv : null;
+      const pct  = ((count/grandTotal)*100).toFixed(1);
+      const chg  = d === null ? '' : `<td class="num"><span class="${d>0?'delta-pos':d<0?'delta-neg':''}">${d>0?'+':''}${d}</span></td>`;
+      html += `<tr><td><strong>${tag}</strong></td><td class="num">${count}</td>${pv!==null?`<td class="num">${pv||'—'}</td>`:''}${chg}
+        <td><div class="pct-wrap"><div class="pct-bg"><div class="pct-fill" style="width:${Math.round(count/grandTotal*100)}%"></div></div><span class="pct-lbl">${pct}%</span></div></td></tr>`;
+    });
+    html += `<tr class="total-row"><td>TOTAL</td><td class="num">${grandTotal}</td>${prev!==null?'<td class="num">—</td><td class="num">—</td>':''}<td>100%</td></tr>`;
+  }
+  html += '</tbody>';
+  document.getElementById('tagsTable').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// NOTES TAB
+// ══════════════════════════════════════════════════════════════════════════
+function renderNotes(mi) {
+  const grid = document.getElementById('notes-grid');
+  const notes = mi === 'all' ? NOTES : [NOTES[mi]];
+  grid.innerHTML = notes.map(n => `
+    <div class="note-card">
+      <div class="note-hdr" style="background:${n.color}">${n.month}</div>
+      <div class="note-body">
+        <p>${n.summary}</p>
+        <div style="margin-top:13px;font-size:.74rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Top Tags</div>
+        <div class="chips">${n.topTags.map(([t,c])=>`<span class="chip">${t}<span class="cc">${c}</span></span>`).join('')}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// RENDER ALL
+// ══════════════════════════════════════════════════════════════════════════
+function renderAll() {
+  const mi = activeMonth;
+  ['dashboard','snow','hubspot','tags','notes'].forEach(id => renderBanner('banner-'+id, mi));
+  renderKPIs(mi);
+  renderOverviewCharts(mi);
+  renderSnow(mi);
+  renderHubspot(mi);
+  renderTags(mi);
+  renderNotes(mi);
+}
+
+// ── Init ──
+renderAll();
+</script>
 </body>
-
 </html>
-
-
